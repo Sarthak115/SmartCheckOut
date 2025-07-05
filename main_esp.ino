@@ -10,29 +10,24 @@
 #define OLED_RESET     -1
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-// Wi-Fi credentials
 const char* ssid = "Acer";
 const char* password = "Sarthak@017";
 
-// Web server & WebSocket
 WebServer server(80);
 WebSocketsServer webSocket = WebSocketsServer(81);
 
-// Product/cart structure
 struct Item {
   String name;
   int price;
   int qty;
 };
 
-Item cart[20];  // Max 20 unique items
+Item cart[20];
 int itemCount = 0;
 int grandTotal = 0;
-
 String lastScanned = "Waiting...";
 String lastName = "";
 int lastPrice = 0;
-bool waitingForPrice = false;
 
 void updateOLED() {
   display.clearDisplay();
@@ -43,18 +38,10 @@ void updateOLED() {
   display.setTextSize(2);
   display.setCursor(0, 30);
   display.println(lastName);
+  display.setTextSize(2);
   display.setCursor(0, 50);
   display.print("Rs. ");
   display.println(lastPrice);
-  display.display();
-}
-
-void showPaidOnOLED() {
-  display.clearDisplay();
-  display.setTextSize(2);
-  display.setTextColor(SSD1306_WHITE);
-  display.setCursor(20, 20);
-  display.println("Paid ✅");
   display.display();
 }
 
@@ -66,16 +53,11 @@ void addToCart(String name, int price) {
       return;
     }
   }
-
-  if (itemCount < 20) {
-    cart[itemCount].name = name;
-    cart[itemCount].price = price;
-    cart[itemCount].qty = 1;
-    itemCount++;
-    grandTotal += price;
-  } else {
-    Serial.println("❗ Cart full. Cannot add more items.");
-  }
+  cart[itemCount].name = name;
+  cart[itemCount].price = price;
+  cart[itemCount].qty = 1;
+  itemCount++;
+  grandTotal += price;
 }
 
 void onWebSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
@@ -86,13 +68,11 @@ void onWebSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t leng
     if (data.startsWith("NAME:")) {
       lastName = data.substring(5);
       lastScanned = lastName;
-      waitingForPrice = true;
     }
-    else if (data.startsWith("PRICE:") && waitingForPrice) {
+    else if (data.startsWith("PRICE:")) {
       lastPrice = data.substring(6).toInt();
       addToCart(lastName, lastPrice);
       updateOLED();
-      waitingForPrice = false;
     }
   }
 }
@@ -131,28 +111,45 @@ void handleRoot() {
             document.getElementById('cart').innerHTML = data;
           });
       }
+
       function payNow() {
-        if (confirm("Do you want to proceed?")) {
-          fetch("/pay")
-            .then(res => res.text())
-            .then(data => {
-              alert(data);
-              location.reload();
-            });
-        }
+        fetch("/generateQR")
+          .then(res => res.text())
+          .then(data => {
+            document.getElementById('qr').innerHTML = data;
+          });
       }
+
+      function confirmPayment() {
+        fetch("/pay")
+          .then(res => res.text())
+          .then(msg => {
+            alert(msg);
+            location.reload();
+          });
+      }
+
       setInterval(updateCart, 1000);
     </script>
   </head>
   <body>
     <h1>🛒 Smart Cart - Live Bill</h1>
     <div id="cart"><p>Loading cart...</p></div>
-    <button class="pay-btn" onclick="payNow()">Pay</button>
+    <button class="pay-btn" onclick="payNow()">Pay Now</button>
+    <div id="qr"></div>
+    <button class="pay-btn" onclick="confirmPayment()">I Have Paid</button>
   </body>
   </html>
   )rawliteral";
-
   server.send(200, "text/html", page);
+}
+
+void handleGenerateQR() {
+  String upiURL = "upi://pay?pa=7205788849@jupiteraxis&pn=sarthak&am=" + String(grandTotal) + "&cu=INR";
+  String qrURL = "https://api.dub.co/qr?url=" + upiURL;
+  String html = "<h3>Scan this QR to Pay ₹" + String(grandTotal) + "</h3>";
+  html += "<img src='" + qrURL + "' width='250' height='250'>";
+  server.send(200, "text/html", html);
 }
 
 void setup() {
@@ -160,8 +157,7 @@ void setup() {
   WiFi.begin(ssid, password);
   Serial.print("Connecting");
   while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
+    delay(500); Serial.print(".");
   }
   Serial.println("\n✅ WiFi connected: " + WiFi.localIP().toString());
 
@@ -169,7 +165,6 @@ void setup() {
     Serial.println("❌ OLED not found. Check wiring!");
     while (true);
   }
-
   Serial.println("✅ OLED ready!");
   display.clearDisplay();
   display.setTextSize(2);
@@ -178,25 +173,23 @@ void setup() {
   display.println("SmartCart");
   display.display();
 
-  // Routes
   server.on("/", handleRoot);
   server.on("/cart", handleCartData);
+  server.on("/generateQR", handleGenerateQR);
   server.on("/pay", []() {
     grandTotal = 0;
     itemCount = 0;
     lastScanned = "Waiting...";
     lastName = "";
     lastPrice = 0;
-    showPaidOnOLED();
-    server.send(200, "text/plain", "✅ Payment Successful! Thank you for shopping.");
+    server.send(200, "text/plain", "✅ Payment Confirmed. Thank you!");
   });
 
   server.begin();
   webSocket.begin();
   webSocket.onEvent(onWebSocketEvent);
 
-  Serial.println("🌐 Web interface: http://" + WiFi.localIP().toString());
-  Serial.println("🧠 WebSocket running on port 81");
+  Serial.println("Web server and WebSocket started.");
 }
 
 void loop() {

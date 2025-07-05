@@ -10,24 +10,29 @@
 #define OLED_RESET     -1
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
+// Wi-Fi credentials
 const char* ssid = "Acer";
 const char* password = "Sarthak@017";
 
+// Web server & WebSocket
 WebServer server(80);
 WebSocketsServer webSocket = WebSocketsServer(81);
 
+// Product/cart structure
 struct Item {
   String name;
   int price;
   int qty;
 };
 
-Item cart[20];  
+Item cart[20];  // Max 20 unique items
 int itemCount = 0;
 int grandTotal = 0;
+
 String lastScanned = "Waiting...";
-String lastName = ""; 
+String lastName = "";
 int lastPrice = 0;
+bool waitingForPrice = false;
 
 void updateOLED() {
   display.clearDisplay();
@@ -38,10 +43,18 @@ void updateOLED() {
   display.setTextSize(2);
   display.setCursor(0, 30);
   display.println(lastName);
-  display.setTextSize(2);
   display.setCursor(0, 50);
   display.print("Rs. ");
   display.println(lastPrice);
+  display.display();
+}
+
+void showPaidOnOLED() {
+  display.clearDisplay();
+  display.setTextSize(2);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(20, 20);
+  display.println("Paid ✅");
   display.display();
 }
 
@@ -53,11 +66,16 @@ void addToCart(String name, int price) {
       return;
     }
   }
-  cart[itemCount].name = name;
-  cart[itemCount].price = price;
-  cart[itemCount].qty = 1;
-  itemCount++;
-  grandTotal += price;
+
+  if (itemCount < 20) {
+    cart[itemCount].name = name;
+    cart[itemCount].price = price;
+    cart[itemCount].qty = 1;
+    itemCount++;
+    grandTotal += price;
+  } else {
+    Serial.println("❗ Cart full. Cannot add more items.");
+  }
 }
 
 void onWebSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
@@ -68,11 +86,13 @@ void onWebSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t leng
     if (data.startsWith("NAME:")) {
       lastName = data.substring(5);
       lastScanned = lastName;
+      waitingForPrice = true;
     }
-    else if (data.startsWith("PRICE:")) {
+    else if (data.startsWith("PRICE:") && waitingForPrice) {
       lastPrice = data.substring(6).toInt();
       addToCart(lastName, lastPrice);
       updateOLED();
+      waitingForPrice = false;
     }
   }
 }
@@ -86,41 +106,6 @@ void handleCartData() {
   table += "<p>Last Scanned: " + lastScanned + "</p>";
   server.send(200, "text/html", table);
 }
-
-//void handleRoot() {
-//  String page = R"rawliteral(
-//  <!DOCTYPE html>
-//  <html>
-//  <head>
-//    <title>Smart Cart</title>
-//    <style>
-//      body { font-family: Arial; padding: 20px; background: #f4f4f4; }
-//      h1 { color: #2c3e50; }
-//      table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-//      th, td { padding: 12px; border: 1px solid #ccc; text-align: center; }
-//      th { background-color: #3498db; color: white; }
-//      tr:nth-child(even) { background-color: #f9f9f9; }
-//      .total { font-weight: bold; font-size: 18px; color: green; margin-top: 20px; }
-//    </style>
-//    <script>
-//      function updateCart() {
-//        fetch('/cart')
-//          .then(res => res.text())
-//          .then(data => {
-//            document.getElementById('cart').innerHTML = data;
-//          });
-//      }
-//      setInterval(updateCart, 1000);
-//    </script>
-//  </head>
-//  <body>
-//    <h1>🛒 Smart Cart - Live Bill</h1>
-//    <div id="cart"><p>Loading cart...</p></div>
-//  </body>
-//  </html>
-//  )rawliteral";
-//  server.send(200, "text/html", page);
-//}
 
 void handleRoot() {
   String page = R"rawliteral(
@@ -152,7 +137,7 @@ void handleRoot() {
             .then(res => res.text())
             .then(data => {
               alert(data);
-              location.reload(); // Optionally reset page
+              location.reload();
             });
         }
       }
@@ -166,6 +151,7 @@ void handleRoot() {
   </body>
   </html>
   )rawliteral";
+
   server.send(200, "text/html", page);
 }
 
@@ -173,13 +159,17 @@ void setup() {
   Serial.begin(115200);
   WiFi.begin(ssid, password);
   Serial.print("Connecting");
-  while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
   Serial.println("\n✅ WiFi connected: " + WiFi.localIP().toString());
 
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
     Serial.println("❌ OLED not found. Check wiring!");
     while (true);
   }
+
   Serial.println("✅ OLED ready!");
   display.clearDisplay();
   display.setTextSize(2);
@@ -188,23 +178,25 @@ void setup() {
   display.println("SmartCart");
   display.display();
 
+  // Routes
   server.on("/", handleRoot);
   server.on("/cart", handleCartData);
-  server.begin();
+  server.on("/pay", []() {
+    grandTotal = 0;
+    itemCount = 0;
+    lastScanned = "Waiting...";
+    lastName = "";
+    lastPrice = 0;
+    showPaidOnOLED();
+    server.send(200, "text/plain", "✅ Payment Successful! Thank you for shopping.");
+  });
 
+  server.begin();
   webSocket.begin();
   webSocket.onEvent(onWebSocketEvent);
 
-  Serial.println("WebSocket running on port 81");
-  server.on("/pay", []() {
-  grandTotal = 0;
-  itemCount = 0;
-  lastScanned = "Waiting...";
-  lastName = "";
-  lastPrice = 0;
-  server.send(200, "text/plain", "✅ Payment Successful! Thank you for shopping.");
-});
-
+  Serial.println("🌐 Web interface: http://" + WiFi.localIP().toString());
+  Serial.println("🧠 WebSocket running on port 81");
 }
 
 void loop() {

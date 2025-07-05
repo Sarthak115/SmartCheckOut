@@ -26,7 +26,7 @@ def send_to_esp32(message):
 
 def get_product_info(barcode):
     """ Fetch product name & price from Firebase """
-    try:.
+    try:
         ref = db.reference("/")
         products = ref.get()
 
@@ -77,11 +77,9 @@ def detect_barcode_from_camera():
                 detected_barcodes.add(barcode_data)
 
                 # 🔍 Get product from Firebase
-                product_info = get_product_info(barcode_data)
+                name, price = get_product_info(barcode_data)
 
                 # 📤 Send to ESP32
-                #send_to_esp32(product_info)
-                name, price = get_product_info(barcode_data)
                 send_to_esp32(f"NAME:{name}")
                 send_to_esp32(f"PRICE:{price}")
 

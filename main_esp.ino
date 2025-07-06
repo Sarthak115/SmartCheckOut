@@ -182,7 +182,7 @@ void setup() {
     lastScanned = "Waiting...";
     lastName = "";
     lastPrice = 0;
-    server.send(200, "text/plain", "✅ Payment Confirmed. Thank you!");
+    server.send(200, "text/plain", " Payment Confirmed. Thank you!");
   });
 
   server.begin();

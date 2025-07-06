@@ -7,10 +7,10 @@ import firebase_admin
 from firebase_admin import credentials, db
 
 # 🔹 ESP32 WebSocket
-ESP32_IP = "ws://192.168.209.120:81"
+ESP32_IP = "ws://10.189.137.120:81"
 
 # 🔹 Firebase Setup
-cred = credentials.Certificate("smart-cart-ec13b-firebase-adminsdk-fbsvc-cef35b6071.json")
+cred = credentials.Certificate("smart-cart-ec13b-firebase-adminsdk-fbsvc-0673aee615.json")
 firebase_admin.initialize_app(cred, {
     "databaseURL": "https://smart-cart-ec13b-default-rtdb.firebaseio.com/"
 })
@@ -20,9 +20,9 @@ def send_to_esp32(message):
         ws = websocket.create_connection(ESP32_IP)
         ws.send(message)
         ws.close()
-        print(f"✅ Sent to ESP32: {message}")
+        print(f"[OK] Sent to ESP32: {message}")
     except Exception as e:
-        print(f"❌ ESP32 Error: {e}")
+        print(f"[ERROR] ESP32 Error: {e}")
 
 def get_product_info(barcode):
     """ Fetch product name & price from Firebase """
@@ -35,10 +35,10 @@ def get_product_info(barcode):
             price = products[barcode].get("price", "Unknown")
             return name, price
         else:
-            return "Product Not Found", "0"
+            return None, None  # Explicitly return None if not found
     except Exception as e:
-        print(f"❌ Firebase Error: {e}")
-        return "Error Fetching Data", "0"
+        print(f"[ERROR] Firebase Error: {e}")
+        return None, None
 
 def adjust_brightness_contrast(image):
     alpha, beta = 1.5, 30
@@ -59,16 +59,20 @@ def detect_barcode_from_camera():
     while True:
         ret, frame = cap.read()
         if not ret:
-            print("Camera error")
+            print("[ERROR] Camera error")
             continue
 
         processed_frame = preprocess_image(frame)
         barcodes = decode(processed_frame)
 
         for barcode in barcodes:
-            barcode_data = barcode.data.decode("utf-8")
-            x, y, w, h = barcode.rect
+            try:
+                barcode_data = barcode.data.decode("utf-8")
+            except Exception as e:
+                print("[ERROR] Failed to decode barcode:", e)
+                continue
 
+            x, y, w, h = barcode.rect
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
             cv2.putText(frame, barcode_data, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
 
@@ -79,11 +83,13 @@ def detect_barcode_from_camera():
                 # 🔍 Get product from Firebase
                 name, price = get_product_info(barcode_data)
 
-                # 📤 Send to ESP32
-                send_to_esp32(f"NAME:{name}")
-                send_to_esp32(f"PRICE:{price}")
+                if name and price:  # Only send if valid product found
+                    send_to_esp32(f"NAME:{name}")
+                    send_to_esp32(f"PRICE:{price}")
+                else:
+                    print(f"[INFO] Product not found in database for barcode: {barcode_data}")
 
-            print(f"📦 Scanned: {barcode_data}")
+            print(f"[OK] Scanned: {barcode_data}")
 
         cv2.imshow("Smart Cart Barcode Scanner", frame)
 

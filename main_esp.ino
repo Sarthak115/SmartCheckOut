@@ -60,6 +60,23 @@ void addToCart(String name, int price) {
   grandTotal += price;
 }
 
+// void onWebSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
+//   if (type == WStype_TEXT) {
+//     String data = (char*)payload;
+//     Serial.println("Received: " + data);
+
+//     if (data.startsWith("NAME:")) {
+//       lastName = data.substring(5);
+//       lastScanned = lastName;
+//     }
+//     else if (data.startsWith("PRICE:")) {
+//       lastPrice = data.substring(6).toInt();
+//       addToCart(lastName, lastPrice);
+//       updateOLED();
+//     }
+//   }
+// }
+
 void onWebSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
   if (type == WStype_TEXT) {
     String data = (char*)payload;
@@ -69,13 +86,45 @@ void onWebSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t leng
       lastName = data.substring(5);
       lastScanned = lastName;
     }
+
     else if (data.startsWith("PRICE:")) {
       lastPrice = data.substring(6).toInt();
       addToCart(lastName, lastPrice);
       updateOLED();
     }
+
+    else if (data.startsWith("REMOVED:")) {
+      String removeName = data.substring(8);
+      for (int i = 0; i < itemCount; i++) {
+        if (cart[i].name == removeName) {
+          grandTotal -= cart[i].price * cart[i].qty;
+          for (int j = i; j < itemCount - 1; j++) {
+            cart[j] = cart[j + 1];
+          }
+          itemCount--;
+          Serial.println("Item removed: " + removeName);
+          updateOLED();
+          break;
+        }
+      }
+    }
+
+    else if (data.startsWith("QTY:")) {
+      int newQty = data.substring(4).toInt();
+      for (int i = 0; i < itemCount; i++) {
+        if (cart[i].name == lastName) {
+          grandTotal -= cart[i].qty * cart[i].price;
+          cart[i].qty = newQty;
+          grandTotal += newQty * cart[i].price;
+          Serial.println("Quantity updated: " + cart[i].name + " = " + String(newQty));
+          updateOLED();
+          break;
+        }
+      }
+    }
   }
 }
+
 
 void handleCartData() {
   String table = "<table><tr><th>Product</th><th>Qty</th><th>Price</th><th>Total</th></tr>";

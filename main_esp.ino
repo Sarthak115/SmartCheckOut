@@ -143,10 +143,34 @@ void handleRoot() {
   )rawliteral";
   server.send(200, "text/html", page);
 }
+String urlEncode(String str) {
+  String encodedString = "";
+  char c;
+  char code0;
+  char code1;
+  for (int i = 0; i < str.length(); i++) {
+    c = str.charAt(i);
+    if (isalnum(c)) {
+      encodedString += c;
+    } else {
+      code1 = (c & 0xf) + '0';
+      if ((c & 0xf) > 9) code1 = (c & 0xf) - 10 + 'A';
+      code0 = ((c >> 4) & 0xf) + '0';
+      if (((c >> 4) & 0xf) > 9) code0 = ((c >> 4) & 0xf) - 10 + 'A';
+      encodedString += '%';
+      encodedString += code0;
+      encodedString += code1;
+    }
+  }
+  return encodedString;
+}
+
 
 void handleGenerateQR() {
   String upiURL = "upi://pay?pa=7205788849@jupiteraxis&pn=sarthak&am=" + String(grandTotal) + "&cu=INR";
-  String qrURL = "https://api.dub.co/qr?url=" + upiURL;
+   String encodedUpiURL = urlEncode(upiURL);
+
+  String qrURL = "https://api.dub.co/qr?url=" + encodedUpiURL;
   String html = "<h3>Scan this QR to Pay ₹" + String(grandTotal) + "</h3>";
   html += "<img src='" + qrURL + "' width='250' height='250'>";
   server.send(200, "text/html", html);
